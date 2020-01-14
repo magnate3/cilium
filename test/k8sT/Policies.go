@@ -89,9 +89,15 @@ var _ = Describe("K8sPolicyTest", func() {
 		knpAllowEgress = helpers.ManifestGet(kubectl.BasePath(), "knp-default-allow-egress.yaml")
 		cnpMatchExpression = helpers.ManifestGet(kubectl.BasePath(), "cnp-matchexpressions.yaml")
 
+		// Making sure that we deleted the  cilium ds. No assert
+		// message because maybe is not present
+		if res := kubectl.DeleteResource("ds", fmt.Sprintf("-n %s cilium", helpers.KubeSystemNamespace)); !res.WasSuccessful() {
+			log.Warningf("Unable to delete Cilium DaemonSet: %s", res.OutputPrettyPrint())
+		}
 		DeployCiliumOptionsAndDNS(kubectl, []string{
 			"--set global.tls.secretsBackend=k8s",
 			"--set global.debug.verbose=flow",
+			"--set global.proxy.httpRetryTimeout=7",
 		})
 	})
 

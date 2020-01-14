@@ -49,6 +49,10 @@ data:
   debug-verbose: "{{ .Values.global.debug.verbose }}"
 {{- end }}
 
+{{- if .Values.global.proxy.httpRetryTimeout }}
+  http-retry-timeout: "{{ .Values.global.proxy.httpRetryTimeout }}"
+{{- end }}
+
 {{- if .Values.global.prometheus.enabled }}
   # If you want metrics enabled in all of your Cilium agents, set the port for
   # which the Cilium agents will have their metrics exposed.
