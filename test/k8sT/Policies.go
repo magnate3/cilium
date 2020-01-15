@@ -94,6 +94,7 @@ var _ = Describe("K8sPolicyTest", func() {
 		if res := kubectl.DeleteResource("ds", fmt.Sprintf("-n %s cilium", helpers.KubeSystemNamespace)); !res.WasSuccessful() {
 			log.Warningf("Unable to delete Cilium DaemonSet: %s", res.OutputPrettyPrint())
 		}
+		deleteCiliumDS(kubectl)
 		DeployCiliumOptionsAndDNS(kubectl, []string{
 			"--set global.tls.secretsBackend=k8s",
 			"--set global.debug.verbose=flow",
