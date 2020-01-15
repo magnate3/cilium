@@ -286,6 +286,49 @@ int sock4_xlate(struct bpf_sock_addr *ctx)
 	return SYS_PROCEED;
 }
 
+#ifdef ENABLE_NODEPORT
+__section("bind-sock4")
+int sock4_bind(struct bpf_sock_addr *ctx)
+{
+	struct lb4_service *svc;
+	struct lb4_key key = {
+		.address	= ctx->user_ip4,
+		.dport		= ctx_get_port(ctx),
+	};
+
+	if (!sock_proto_enabled(ctx))
+		return SYS_PROCEED;
+
+	svc = __lb4_lookup_service(&key);
+
+	if (!svc) {
+		/* The k8s watcher already installs service frontends
+		 * for NodePort IPs. If we have not found a service, the
+		 * only remaining overlap might be with the loopback
+		 * address, for which we perform a wildcard lookup.
+		 */
+		__u16 dport = bpf_ntohs(key.dport);
+		if (dport >= NODEPORT_PORT_MIN && dport <= NODEPORT_PORT_MAX &&
+			is_v4_loopback(key.address)) {
+
+			key.address = 0;
+			key.dport = ctx_get_port(ctx);
+			svc = __lb4_lookup_service(&key);
+		}
+	}
+
+	if (svc && (lb4_svc_is_nodeport(svc) || lb4_svc_is_external_ip(svc))) {
+		/* The sockaddr of this socket overlaps with a NodePort
+		 * or ExternalIP service. We must reject this bind() call
+		 * to avoid accidentally hijacking its traffic.
+		 */
+		return SYS_REJECT;
+	}
+
+	return SYS_PROCEED;
+}
+#endif /* ENABLE_NODEPORT */
+
 #ifdef ENABLE_HOST_SERVICES_UDP
 __section("snd-sock4")
 int sock4_xlate_snd(struct bpf_sock_addr *ctx)
@@ -496,6 +539,42 @@ out_fill_addr:
 	ctx_get_v6_address(ctx, &key->address);
 #endif /* ENABLE_NODEPORT */
 }
+
+#ifdef ENABLE_NODEPORT
+__section("bind-sock6")
+int sock6_bind(struct bpf_sock_addr *ctx)
+{
+	struct lb6_service *svc;
+	struct lb6_key key = {
+		.dport		= ctx_get_port(ctx),
+	};
+
+	if (!sock_proto_enabled(ctx))
+		return SYS_PROCEED;
+
+	ctx_get_v6_address(ctx, &key.address);
+
+	svc = __lb6_lookup_service(&key);
+
+	if (!svc) {
+		__u16 dport = bpf_ntohs(key.dport);
+
+		if (dport >= NODEPORT_PORT_MIN && dport <= NODEPORT_PORT_MAX &&
+			is_v6_loopback(&key.address)) {
+
+			__builtin_memset(&key.address, 0, sizeof(key.address));
+			key.dport = ctx_get_port(ctx);
+			svc = __lb6_lookup_service(&key);
+		}
+	}
+
+	if (svc && (lb6_svc_is_nodeport(svc) || lb6_svc_is_external_ip(svc))) {
+		return SYS_REJECT;
+	}
+
+	return SYS_PROCEED;
+}
+#endif /* ENABLE_NODEPORT */
 
 __section("from-sock6")
 int sock6_xlate(struct bpf_sock_addr *ctx)
